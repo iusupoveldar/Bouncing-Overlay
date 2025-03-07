@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bouncing DVD Logo</title>
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #controls {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 10;
+    }
+    #controls label {
+      display: block;
+      margin-bottom: 8px;
+    }
+    #canvas {
+      display: block;
+    }
+  </style>
+  <!-- Include gifler for animated GIF support -->
+  <script src="https://cdn.jsdelivr.net/npm/gifler@0.1.0/gifler.min.js"></script>
+</head>
+<body>
+  <div id="controls">
+    <label>
+      Upload Logo(s):
+      <!-- Allow multiple file selection -->
+      <input type="file" id="logoInput" accept="image/png, image/jpeg, image/gif" multiple />
+    </label>
+    <label>
+      Logo Scale:
+      <input type="range" id="scaleSlider" min="0.1" max="3" step="0.1" value="1" />
+      <span id="scaleValue">1.0</span>
+    </label>
+    <label>
+      Number of Logos:
+      <input type="range" id="countSlider" min="1" max="50" step="1" value="5" />
+      <span id="countValue">5</span>
+    </label>
+    <label>
+      Speed Multiplier:
+      <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1" />
+      <span id="speedValue">1.0</span>
+    </label>
+  </div>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    // Set up canvas and context.
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Global variables.
+    let logoScale = 1.0;
+    let numLogos = 1;
+    let speedMultiplier = 0.1;
+    let logos = [];
+
+    // Create a default "DVD" logo using an offscreen canvas.
+    function createDefaultLogo() {
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = 200;
+      offCanvas.height = 100;
+      const offCtx = offCanvas.getContext('2d');
+      offCtx.fillStyle = '#0f0';
+      offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+      offCtx.font = 'bold 40px sans-serif';
+      offCtx.fillStyle = '#000';
+      offCtx.textAlign = 'center';
+      offCtx.textBaseline = 'middle';
+      offCtx.fillText('DVD', offCanvas.width / 2, offCanvas.height / 2);
+      return { type: 'static', element: offCanvas, width: offCanvas.width, height: offCanvas.height };
+    }
+    // Initialize imagesList with a default logo.
+    const defaultLogo = createDefaultLogo();
+    let imagesList = [defaultLogo];
+
+    // Controls.
+    const scaleSlider = document.getElementById('scaleSlider');
+    const scaleValueSpan = document.getElementById('scaleValue');
+    scaleSlider.addEventListener('input', function() {
+      logoScale = parseFloat(this.value);
+      scaleValueSpan.textContent = logoScale.toFixed(1);
+    });
+
+    const countSlider = document.getElementById('countSlider');
+    const countValueSpan = document.getElementById('countValue');
+    countSlider.addEventListener('input', function() {
+      numLogos = parseInt(this.value, 10);
+      countValueSpan.textContent = numLogos;
+      adjustLogoCount();
+    });
+
+    const speedSlider = document.getElementById('speedSlider');
+    const speedValueSpan = document.getElementById('speedValue');
+    speedSlider.addEventListener('input', function() {
+      speedMultiplier = parseFloat(this.value);
+      speedValueSpan.textContent = speedMultiplier.toFixed(1);
+    });
+
+    // Create a logo object.
+    // The passed index is used to choose an image from imagesList (cycling through if needed).
+    function createLogo(index) {
+      const imageObj = imagesList.length > 0 ? imagesList[index % imagesList.length] : defaultLogo;
+      const imgWidth = imageObj.type === 'gif' ? imageObj.canvas.width : imageObj.element.width;
+      const imgHeight = imageObj.type === 'gif' ? imageObj.canvas.height : imageObj.element.height;
+      const w = imgWidth * logoScale;
+      const h = imgHeight * logoScale;
+      const x = Math.random() * (canvas.width - w);
+      const y = Math.random() * (canvas.height - h);
+      const dx = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3);
+      const dy = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3);
+      return { x, y, dx, dy, image: imageObj };
+    }
+
+    // Adjust the number of logos.
+    function adjustLogoCount() {
+      while (logos.length < numLogos) {
+        logos.push(createLogo(logos.length));
+      }
+      while (logos.length > numLogos) {
+        logos.pop();
+      }
+    }
+
+    // File input: support multiple images/gifs.
+    const logoInput = document.getElementById('logoInput');
+    logoInput.addEventListener('change', function(e) {
+      const files = e.target.files;
+      if (files.length === 0) return;
+      imagesList = []; // Clear current images.
+      let filesProcessed = 0;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          const dataUrl = event.target.result;
+          if (file.type === "image/gif") {
+            // Use gifler for animated GIFs.
+            gifler(dataUrl).get(function(anim) {
+              const offCanvas = document.createElement('canvas');
+              offCanvas.width = anim.width;
+              offCanvas.height = anim.height;
+              anim.onDraw = function(ctx, frame) {
+                ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+                ctx.drawImage(frame.buffer, 0, 0);
+              };
+              // This call replaces anim.animate() with animateInCanvas.
+              anim.animateInCanvas(offCanvas);
+              imagesList.push({ type: 'gif', canvas: offCanvas, width: offCanvas.width, height: offCanvas.height });
+              filesProcessed++;
+              if (filesProcessed === files.length) {
+                updateLogoCountFromFiles();
+              }
+            });
+          } else {
+            // For static images.
+            const img = new Image();
+            img.onload = function() {
+              imagesList.push({ type: 'static', element: img, width: img.width, height: img.height });
+              filesProcessed++;
+              if (filesProcessed === files.length) {
+                updateLogoCountFromFiles();
+              }
+            };
+            img.src = dataUrl;
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // After files are loaded, set the number of logos to the number of loaded images.
+    function updateLogoCountFromFiles() {
+      numLogos = imagesList.length;
+      countSlider.value = numLogos;
+      countValueSpan.textContent = numLogos;
+      logos = [];
+      for (let i = 0; i < numLogos; i++) {
+        logos.push(createLogo(i));
+      }
+    }
+
+    // Initialize logos.
+    adjustLogoCount();
+
+    // Animation loop.
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let logo of logos) {
+        const imgWidth = logo.image.type === 'gif' ? logo.image.canvas.width : logo.image.element.width;
+        const imgHeight = logo.image.type === 'gif' ? logo.image.canvas.height : logo.image.element.height;
+        const w = imgWidth * logoScale;
+        const h = imgHeight * logoScale;
+        logo.x += logo.dx * speedMultiplier;
+        logo.y += logo.dy * speedMultiplier;
+        // Bounce off boundaries.
+        if (logo.x <= 0) {
+          logo.x = 0;
+          logo.dx = -logo.dx;
+        } else if (logo.x + w >= canvas.width) {
+          logo.x = canvas.width - w;
+          logo.dx = -logo.dx;
+        }
+        if (logo.y <= 0) {
+          logo.y = 0;
+          logo.dy = -logo.dy;
+        } else if (logo.y + h >= canvas.height) {
+          logo.y = canvas.height - h;
+          logo.dy = -logo.dy;
+        }
+        // Draw the logo.
+        if (logo.image.type === 'gif') {
+          ctx.drawImage(logo.image.canvas, logo.x, logo.y, w, h);
+        } else {
+          ctx.drawImage(logo.image.element, logo.x, logo.y, w, h);
+        }
+      }
+      requestAnimationFrame(animate);
+    }
+    animate();
+  </script>
+</body>
+</html>
